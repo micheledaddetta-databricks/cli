@@ -1,0 +1,11 @@
+Badness = "Terraform provider does not yet support alert_task. Enable terraform engine once the provider version is bumped."
+Local = true
+Cloud = true
+RecordRequests = false
+Ignore = ["databricks.yml", ".databricks"]
+
+[EnvMatrix]
+DATABRICKS_BUNDLE_ENGINE = ["direct"]
+
+[Env]
+MSYS_NO_PATHCONV = "1"
