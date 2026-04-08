@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/databricks/cli/cmd/psql"
+	aitoolscmd "github.com/databricks/cli/experimental/aitools/cmd"
 	ssh "github.com/databricks/cli/experimental/ssh/cmd"
 
 	"github.com/databricks/cli/cmd/account"
@@ -93,6 +94,7 @@ func New(ctx context.Context) *cobra.Command {
 	}
 
 	// Add other subcommands.
+	cli.AddCommand(aitoolscmd.NewAitoolsCmd())
 	cli.AddCommand(api.New())
 	cli.AddCommand(auth.New())
 	cli.AddCommand(completion.New())

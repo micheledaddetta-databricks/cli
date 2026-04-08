@@ -20,7 +20,12 @@ These commands provide early access to new features that are still under
 development. They may change or be removed in future versions without notice.`,
 	}
 
-	cmd.AddCommand(aitoolscmd.NewAitoolsCmd())
+	// Keep aitools under experimental as a hidden backward-compatibility alias.
+	// The primary command is now registered at the top level.
+	aitoolsAlias := aitoolscmd.NewAitoolsCmd()
+	aitoolsAlias.Hidden = true
+	aitoolsAlias.Deprecated = "use 'databricks aitools' instead"
+	cmd.AddCommand(aitoolsAlias)
 
 	return cmd
 }

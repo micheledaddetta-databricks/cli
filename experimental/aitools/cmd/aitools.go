@@ -6,9 +6,8 @@ import (
 
 func NewAitoolsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "aitools",
-		Hidden: true,
-		Short:  "Databricks AI Tools for coding agents",
+		Use:   "aitools",
+		Short: "Databricks AI Tools for coding agents",
 		Long: `Manage Databricks AI Tools.
 
 Provides commands to:
