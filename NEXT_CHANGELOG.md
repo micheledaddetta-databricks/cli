@@ -7,6 +7,7 @@
 ### CLI
 
 ### Bundles
+* Fix script output dropping last line without trailing newline (denik/random-bugfixes-4)
 
 ### Dependency updates
 
