@@ -9,6 +9,7 @@
 * Added `--limit` flag to all paginated list commands for client-side result capping ([#4984](https://github.com/databricks/cli/pull/4984)).
 
 ### Bundles
+* Fix float precision loss when parsing number-type template variables during `bundle init` (denik/random-bugfixes-3)
 
 ### Dependency updates
 
