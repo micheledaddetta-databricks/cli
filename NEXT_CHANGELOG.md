@@ -9,7 +9,7 @@
 * Added `--limit` flag to all paginated list commands for client-side result capping ([#4984](https://github.com/databricks/cli/pull/4984)).
 
 ### Bundles
-* engine/direct: Fix phantom diffs from `depends_on` reordering in job tasks (denik/jobs-depends-on)
+* engine/direct: Fix phantom diffs from `depends_on` reordering in job tasks ([#4990](https://github.com/databricks/cli/pull/4990))
 
 ### Dependency updates
 
