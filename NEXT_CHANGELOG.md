@@ -7,6 +7,7 @@
 ### CLI
 
 * Added `--limit` flag to all paginated list commands for client-side result capping ([#4984](https://github.com/databricks/cli/pull/4984)).
+* Added experimental OS-native secure token storage behind the `--secure-storage` flag on `databricks auth login` and the `DATABRICKS_AUTH_STORAGE=secure` environment variable. Hidden from help during MS1. Legacy file-backed token storage remains the default.
 
 ### Bundles
 
