@@ -77,6 +77,11 @@ and secret is not supported.`,
 		ctx := cmd.Context()
 		profileName := cmd.Flag("profile").Value.String()
 
+		tokenCache, _, err := newAuthCache(ctx, "")
+		if err != nil {
+			return err
+		}
+
 		t, err := loadToken(ctx, loadTokenArgs{
 			authArguments:      authArguments,
 			profileName:        profileName,
@@ -84,7 +89,7 @@ and secret is not supported.`,
 			tokenTimeout:       tokenTimeout,
 			forceRefresh:       forceRefresh,
 			profiler:           profile.DefaultProfiler,
-			persistentAuthOpts: nil,
+			persistentAuthOpts: []u2m.PersistentAuthOption{u2m.WithTokenCache(tokenCache)},
 		})
 		if err != nil {
 			return err
@@ -437,6 +442,11 @@ func runInlineLogin(ctx context.Context, profiler profile.Profiler) (string, *pr
 		return "", nil, err
 	}
 
+	tokenCache, _, err := newAuthCache(ctx, "")
+	if err != nil {
+		return "", nil, err
+	}
+
 	loginArgs := &auth.AuthArguments{}
 	applyUnifiedHostFlags(existingProfile, loginArgs)
 
@@ -461,6 +471,7 @@ func runInlineLogin(ctx context.Context, profiler profile.Profiler) (string, *pr
 	persistentAuthOpts := []u2m.PersistentAuthOption{
 		u2m.WithOAuthArgument(oauthArgument),
 		u2m.WithBrowser(openURLSuppressingStderr),
+		u2m.WithTokenCache(tokenCache),
 	}
 	if len(scopesList) > 0 {
 		persistentAuthOpts = append(persistentAuthOpts, u2m.WithScopes(scopesList))
