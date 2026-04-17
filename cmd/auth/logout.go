@@ -132,9 +132,9 @@ to specify it explicitly.
 			profileName = selected
 		}
 
-		tokenCache, err := cache.NewFileTokenCache()
+		tokenCache, _, err := newAuthCache(ctx, "")
 		if err != nil {
-			return fmt.Errorf("failed to open token cache, please check if the file version is up-to-date and that the file is not corrupted: %w", err)
+			return fmt.Errorf("failed to open token cache: %w", err)
 		}
 
 		return runLogout(ctx, logoutArgs{
