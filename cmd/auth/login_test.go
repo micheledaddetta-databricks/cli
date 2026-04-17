@@ -623,7 +623,7 @@ func TestDiscoveryLogin_IntrospectionFailureStillSavesProfile(t *testing.T) {
 	}
 
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "all-apis, ,sql,", nil, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "all-apis, ,sql,", nil, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://workspace.example.com", dc.introspectHost)
@@ -671,7 +671,7 @@ func TestDiscoveryLogin_AccountIDMismatchWarning(t *testing.T) {
 		AccountID: "old-account-id",
 	}
 
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	// Verify warning about mismatched account IDs was logged.
@@ -719,7 +719,7 @@ func TestDiscoveryLogin_NoWarningWhenAccountIDsMatch(t *testing.T) {
 		AccountID: "same-account-id",
 	}
 
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	// No warning should be logged when account IDs match.
@@ -739,7 +739,7 @@ func TestDiscoveryLogin_EmptyDiscoveredHostReturnsError(t *testing.T) {
 	}
 
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", nil, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", nil, func(string) error { return nil }, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no workspace host was discovered")
 }
@@ -771,7 +771,7 @@ func TestDiscoveryLogin_ReloginPreservesExistingProfileScopes(t *testing.T) {
 
 	// No --scopes flag (empty string), should fall back to existing profile scopes.
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	savedProfile, err := loadProfileByName(ctx, "DISCOVERY", profile.DefaultProfiler)
@@ -808,7 +808,7 @@ func TestDiscoveryLogin_ExplicitScopesOverrideExistingProfile(t *testing.T) {
 
 	// Explicit --scopes flag should override existing profile scopes.
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "all-apis", existingProfile, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "all-apis", existingProfile, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	savedProfile, err := loadProfileByName(ctx, "DISCOVERY", profile.DefaultProfiler)
@@ -848,7 +848,7 @@ func TestDiscoveryLogin_SPOGHostPopulatesAccountIDFromDiscovery(t *testing.T) {
 	}
 
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", nil, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", nil, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	savedProfile, err := loadProfileByName(ctx, "DISCOVERY", profile.DefaultProfiler)
@@ -883,7 +883,7 @@ func TestDiscoveryLogin_IntrospectionFallsBackWhenDiscoveryFails(t *testing.T) {
 	}
 
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", nil, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", nil, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	savedProfile, err := loadProfileByName(ctx, "DISCOVERY", profile.DefaultProfiler)
@@ -932,7 +932,7 @@ auth_type = databricks-cli
 	}
 
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	savedProfile, err := loadProfileByName(ctx, "DISCOVERY", profile.DefaultProfiler)
@@ -982,7 +982,7 @@ auth_type = databricks-cli
 	}
 
 	ctx, _ := cmdio.NewTestContextWithStdout(t.Context())
-	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil })
+	err = discoveryLogin(ctx, dc, "DISCOVERY", time.Second, "", existingProfile, func(string) error { return nil }, nil)
 	require.NoError(t, err)
 
 	savedProfile, err := loadProfileByName(ctx, "DISCOVERY", profile.DefaultProfiler)

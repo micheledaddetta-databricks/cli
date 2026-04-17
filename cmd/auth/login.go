@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/databricks/cli/libs/auth"
+	"github.com/databricks/cli/libs/auth/storage"
 	"github.com/databricks/cli/libs/cmdio"
 	"github.com/databricks/cli/libs/databrickscfg"
 	"github.com/databricks/cli/libs/databrickscfg/cfgpickers"
@@ -22,6 +23,7 @@ import (
 	"github.com/databricks/databricks-sdk-go/config"
 	"github.com/databricks/databricks-sdk-go/config/experimental/auth/authconv"
 	"github.com/databricks/databricks-sdk-go/credentials/u2m"
+	"github.com/databricks/databricks-sdk-go/credentials/u2m/cache"
 	browserpkg "github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
@@ -141,11 +143,28 @@ a new profile is created.
 	cmd.Flags().StringVar(&scopes, "scopes", "",
 		"Comma-separated list of OAuth scopes to request (defaults to 'all-apis')")
 
+	var secureStorage bool
+	cmd.Flags().BoolVar(&secureStorage, "secure-storage", false,
+		"Experimental: write OAuth tokens to the OS-native secure store")
+	// Hidden during MS1; discovery is via release notes and the
+	// DATABRICKS_AUTH_STORAGE env var. See
+	// documents/fy2027-q2/cli-ga/2026-04-13-cli-ga-rollout-contract.md.
+	_ = cmd.Flags().MarkHidden("secure-storage")
+
 	cmd.PreRunE = profileHostConflictCheck
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		profileName := cmd.Flag("profile").Value.String()
+
+		var storageOverride storage.StorageMode
+		if secureStorage {
+			storageOverride = storage.StorageModeSecure
+		}
+		tokenCache, _, err := newAuthCache(ctx, storageOverride)
+		if err != nil {
+			return err
+		}
 
 		// Cluster and Serverless are mutually exclusive.
 		if configureCluster && configureServerless {
@@ -197,7 +216,7 @@ a new profile is created.
 			if err := validateDiscoveryFlagCompatibility(cmd); err != nil {
 				return err
 			}
-			return discoveryLogin(ctx, &defaultDiscoveryClient{}, profileName, loginTimeout, scopes, existingProfile, getBrowserFunc(cmd))
+			return discoveryLogin(ctx, &defaultDiscoveryClient{}, profileName, loginTimeout, scopes, existingProfile, getBrowserFunc(cmd), tokenCache)
 		}
 
 		// Load unified host flag from the profile if not explicitly set via CLI flag.
@@ -232,6 +251,7 @@ a new profile is created.
 		persistentAuthOpts := []u2m.PersistentAuthOption{
 			u2m.WithOAuthArgument(oauthArgument),
 			u2m.WithBrowser(getBrowserFunc(cmd)),
+			u2m.WithTokenCache(tokenCache),
 		}
 		if len(scopesList) > 0 {
 			persistentAuthOpts = append(persistentAuthOpts, u2m.WithScopes(scopesList))
@@ -580,7 +600,7 @@ func openURLSuppressingStderr(url string) error {
 // discoveryLogin runs the login.databricks.com discovery flow. The user
 // authenticates in the browser, selects a workspace, and the CLI receives
 // the workspace host from the OAuth callback's iss parameter.
-func discoveryLogin(ctx context.Context, dc discoveryClient, profileName string, timeout time.Duration, scopes string, existingProfile *profile.Profile, browserFunc func(string) error) error {
+func discoveryLogin(ctx context.Context, dc discoveryClient, profileName string, timeout time.Duration, scopes string, existingProfile *profile.Profile, browserFunc func(string) error, tokenCache cache.TokenCache) error {
 	arg, err := dc.NewOAuthArgument(profileName)
 	if err != nil {
 		return discoveryErr("setting up login.databricks.com", err)
@@ -595,6 +615,7 @@ func discoveryLogin(ctx context.Context, dc discoveryClient, profileName string,
 		u2m.WithOAuthArgument(arg),
 		u2m.WithBrowser(browserFunc),
 		u2m.WithDiscoveryLogin(),
+		u2m.WithTokenCache(tokenCache),
 	}
 	if len(scopesList) > 0 {
 		opts = append(opts, u2m.WithScopes(scopesList))
