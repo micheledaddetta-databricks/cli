@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/databricks/cli/libs/auth"
-	"github.com/databricks/cli/libs/auth/storage"
 	"github.com/databricks/cli/libs/cmdio"
 	"github.com/databricks/cli/libs/databrickscfg"
 	"github.com/databricks/cli/libs/databrickscfg/cfgpickers"
@@ -143,25 +142,13 @@ a new profile is created.
 	cmd.Flags().StringVar(&scopes, "scopes", "",
 		"Comma-separated list of OAuth scopes to request (defaults to 'all-apis')")
 
-	var secureStorage bool
-	cmd.Flags().BoolVar(&secureStorage, "secure-storage", false,
-		"Experimental: write OAuth tokens to the OS-native secure store")
-	// Hidden during MS1; discovery is via release notes and the
-	// DATABRICKS_AUTH_STORAGE env var. See
-	// documents/fy2027-q2/cli-ga/2026-04-13-cli-ga-rollout-contract.md.
-	_ = cmd.Flags().MarkHidden("secure-storage")
-
 	cmd.PreRunE = profileHostConflictCheck
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		profileName := cmd.Flag("profile").Value.String()
 
-		var storageOverride storage.StorageMode
-		if secureStorage {
-			storageOverride = storage.StorageModeSecure
-		}
-		tokenCache, _, err := newAuthCache(ctx, storageOverride)
+		tokenCache, _, err := newAuthCache(ctx, "")
 		if err != nil {
 			return err
 		}
