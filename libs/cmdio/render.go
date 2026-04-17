@@ -272,18 +272,26 @@ func Render(ctx context.Context, v any) error {
 }
 
 // RenderIterator renders the items produced by i. When the terminal is
-// fully interactive (stdin + stdout + stderr all TTYs) and the caller
-// hasn't supplied a row template, we page through the iterator's JSON
-// representation instead of dumping the full array at once: 50 items
-// at a time, with a prompt on stderr between pages asking whether to
-// continue. Piped output and explicit --output json against a pipe
-// keep the existing non-paged behavior. Commands that do supply a row
-// template also keep the existing non-paged behavior — a follow-up
-// change will add paging for them.
+// fully interactive (stdin + stdout + stderr all TTYs), the iterator is
+// paged through one batch at a time with a prompt between pages:
+//
+//   - For text output with a row template, we page through the existing
+//     template + tabwriter pipeline (same colors, same alignment as the
+//     non-paged path; widths are locked from the first batch so columns
+//     stay aligned across pages).
+//   - For JSON output or text output without a row template, we page
+//     through the JSON renderer instead.
+//
+// Piped output keeps the existing non-paged behavior in all cases.
 func RenderIterator[T any](ctx context.Context, i listing.Iterator[T]) error {
 	c := fromContext(ctx)
-	if c.template == "" && c.capabilities.SupportsPager() && (c.outputFormat == flags.OutputJSON || c.outputFormat == flags.OutputText) {
-		return renderIteratorPagedJSON(ctx, i, c.out)
+	if c.capabilities.SupportsPager() {
+		if c.outputFormat == flags.OutputText && c.template != "" {
+			return renderIteratorPagedTemplate(ctx, i, c.out, c.headerTemplate, c.template)
+		}
+		if c.outputFormat == flags.OutputJSON || c.outputFormat == flags.OutputText {
+			return renderIteratorPagedJSON(ctx, i, c.out)
+		}
 	}
 	return renderWithTemplate(ctx, newIteratorRenderer(i), c.outputFormat, c.out, c.headerTemplate, c.template)
 }
