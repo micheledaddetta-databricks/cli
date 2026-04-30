@@ -64,6 +64,11 @@ type Ucm struct {
 	// Initialized lazily by WorkspaceClientE via initClientOnce.
 	getClient func() (*databricks.WorkspaceClient, error)
 
+	// getAccountClient memoizes the account client built from
+	// Config.Workspace. Initialized lazily by AccountClientE via
+	// initAccountClientOnce.
+	getAccountClient func() (*databricks.AccountClient, error)
+
 	Metrics Metrics
 }
 

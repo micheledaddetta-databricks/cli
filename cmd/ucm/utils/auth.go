@@ -40,6 +40,14 @@ func (e ErrNoWorkspaceProfiles) Error() string {
 	return e.path + " does not contain workspace profiles; please create one by running 'databricks auth login'"
 }
 
+type ErrNoAccountProfiles struct {
+	path string
+}
+
+func (e ErrNoAccountProfiles) Error() string {
+	return e.path + " does not contain account profiles"
+}
+
 // Helper function to create a workspace client or prompt once if the given configuration is not valid.
 func workspaceClientOrPrompt(ctx context.Context, cfg *config.Config, allowPrompt bool) (*databricks.WorkspaceClient, error) {
 	w, err := databricks.NewWorkspaceClient((*databricks.Config)(cfg))
@@ -96,10 +104,6 @@ func workspaceClientOrPrompt(ctx context.Context, cfg *config.Config, allowPromp
 // auth fields layered on top of profile/env), stores it on the command
 // context, and returns. Used as a Cobra (Persistent)PreRunE hook on ucm
 // verbs that need a live SDK client.
-//
-// TODO(#99): port AccountClient resolution here. v1 ucm design (see
-// cmd/ucm/CLAUDE.md "Auth model") requires both clients, but A.iii.1 ships
-// workspace-only to keep the fork mechanically aligned with bundle's shape.
 func MustWorkspaceClient(cmd *cobra.Command, args []string) error {
 	ctx := logdiag.InitContext(cmd.Context())
 	cmd.SetContext(ctx)
@@ -152,6 +156,160 @@ func MustWorkspaceClient(cmd *cobra.Command, args []string) error {
 	ctx = cmdctx.SetWorkspaceClient(ctx, w)
 	cmd.SetContext(ctx)
 	return nil
+}
+
+// accountClientOrPrompt creates an account client and, if the configuration
+// is incomplete, optionally prompts for a profile. Mirrors the workspace
+// counterpart above and the bundle-side cmd/root.accountClientOrPrompt.
+func accountClientOrPrompt(ctx context.Context, cfg *config.Config, allowPrompt bool) (*databricks.AccountClient, error) {
+	a, err := databricks.NewAccountClient((*databricks.Config)(cfg))
+	if err == nil {
+		err = a.Config.Authenticate(emptyHttpRequest(ctx))
+	}
+
+	// If auth succeeded and we have an account ID, trust the SDK's
+	// resolution (host metadata is fetched during config init).
+	if err == nil && cfg.AccountID != "" {
+		return a, nil
+	}
+
+	// Determine if we should prompt for a profile based on host type. The SDK
+	// no longer returns ErrNotAccountClient from NewAccountClient (host-type
+	// validation moved to host metadata resolution in v0.125.0); use
+	// HostType() to detect the wrong host type.
+	var needsPrompt bool
+	switch cfg.HostType() { //nolint:staticcheck // HostType() deprecated in SDK v0.127.0; SDK moving to host-agnostic behavior.
+	case config.AccountHost, config.UnifiedHost:
+		needsPrompt = cfg.AccountID == ""
+	default:
+		needsPrompt = true
+	}
+	if !needsPrompt && err != nil && errors.Is(err, config.ErrCannotConfigureDefault) {
+		needsPrompt = true
+	}
+
+	if !needsPrompt {
+		return a, err
+	}
+
+	if !allowPrompt || !cmdio.IsPromptSupported(ctx) {
+		if err == nil {
+			err = databricks.ErrNotAccountClient
+		}
+		return a, err
+	}
+
+	pr, err := AskForAccountProfile(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a, err = databricks.NewAccountClient(&databricks.Config{Profile: pr})
+	if err == nil {
+		err = a.Config.Authenticate(emptyHttpRequest(ctx))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return a, err
+}
+
+// MustAccountClient resolves an account client (with optional ucm.yml auth
+// fields layered on top of profile/env), stores it on the command context,
+// and returns. Used as a Cobra (Persistent)PreRunE hook on ucm verbs that
+// need account-scoped APIs (metastore CRUD, metastore assignments).
+func MustAccountClient(cmd *cobra.Command, args []string) error {
+	ctx := logdiag.InitContext(cmd.Context())
+	cmd.SetContext(ctx)
+
+	cfg := &config.Config{}
+
+	// The command-line profile flag takes precedence over DATABRICKS_CONFIG_PROFILE.
+	pr, hasProfileFlag := profileFlagValue(cmd)
+	if hasProfileFlag {
+		cfg.Profile = pr
+	}
+
+	resolveDefaultProfile(ctx, cfg)
+
+	_, isTargetFlagSet := targetFlagValue(cmd)
+	// If the profile flag is set but the target flag is not, we should skip loading the ucm configuration.
+	if !isTargetFlagSet && hasProfileFlag {
+		cmd.SetContext(SkipLoadUcm(cmd.Context()))
+	}
+
+	ctx = cmdctx.SetConfigUsed(cmd.Context(), cfg)
+	cmd.SetContext(ctx)
+
+	// Try to load a ucm configuration if we're allowed to by the caller.
+	if !shouldSkipLoadUcm(cmd.Context()) {
+		u := TryConfigureUcm(cmd)
+		ctx = cmd.Context()
+		if logdiag.HasError(ctx) {
+			return root.ErrAlreadyPrinted
+		}
+
+		if u != nil {
+			ctx = cmdctx.SetConfigUsed(ctx, u.Config.Workspace.Config())
+			cmd.SetContext(ctx)
+			client, err := u.AccountClientE()
+			if err != nil {
+				return err
+			}
+			cfg = client.Config
+		}
+	}
+
+	if cfg.Profile == "" {
+		// Mirror cmd/root.MustAccountClient: if no profile is wired, look for
+		// a single account-compatible profile in databrickscfg and adopt it.
+		profiler := profile.GetProfiler(cmd.Context())
+		profiles, err := profiler.LoadProfiles(cmd.Context(), profile.MatchAccountProfiles)
+		if err == nil && len(profiles) == 1 {
+			cfg.Profile = profiles[0].Name
+		}
+		if err != nil && !errors.Is(err, profile.ErrNoConfiguration) {
+			return err
+		}
+	}
+
+	allowPrompt := !hasProfileFlag && !shouldSkipPrompt(cmd.Context())
+	a, err := accountClientOrPrompt(cmd.Context(), cfg, allowPrompt)
+	if err != nil {
+		return renderError(ctx, cfg, err)
+	}
+
+	ctx = cmdctx.SetAccountClient(ctx, a)
+	cmd.SetContext(ctx)
+	return nil
+}
+
+// AskForAccountProfile is the account-scoped sibling of AskForWorkspaceProfile.
+// Loads account profiles from databrickscfg and either auto-selects the only
+// match or surfaces the interactive picker.
+func AskForAccountProfile(ctx context.Context) (string, error) {
+	profiler := profile.GetProfiler(ctx)
+	path, err := profiler.GetPath(ctx)
+	if err != nil {
+		return "", fmt.Errorf("cannot determine Databricks config file path: %w", err)
+	}
+	profiles, err := profiler.LoadProfiles(ctx, profile.MatchAccountProfiles)
+	if err != nil {
+		return "", err
+	}
+	switch len(profiles) {
+	case 0:
+		return "", ErrNoAccountProfiles{path: path}
+	case 1:
+		return profiles[0].Name, nil
+	}
+	return profile.SelectProfile(ctx, profile.SelectConfig{
+		Label:             "Account profiles defined in " + path,
+		Profiles:          profiles,
+		StartInSearchMode: true,
+		ActiveTemplate:    `{{.Name | bold}} ({{.AccountID|faint}} {{.Cloud|faint}})`,
+		InactiveTemplate:  `{{.Name}}`,
+		SelectedTemplate:  `{{ "Using account profile" | faint }}: {{ .Name | bold }}`,
+	})
 }
 
 // resolveDefaultProfile applies the [__settings__].default_profile setting
