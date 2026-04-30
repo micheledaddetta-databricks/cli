@@ -1,0 +1,5 @@
+# Plan against an empty state — every declared resource shows up as a Create.
+# Real "no changes" coverage (preseeded v2 state + recorded DoRead responses)
+# is tracked separately; see the issue filed at the time of this rename.
+
+trace $CLI ucm plan
