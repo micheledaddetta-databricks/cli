@@ -1,11 +1,16 @@
 package deployment
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/databricks/cli/cmd/root"
+	"github.com/databricks/cli/libs/cmdio"
+	"github.com/databricks/cli/ucm/deploy"
+	"github.com/databricks/cli/ucm/phases"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,4 +87,45 @@ func TestReadTerraformStateHeader_RejectsMalformed(t *testing.T) {
 	_, err := readTerraformStateHeader(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse")
+}
+
+// TestMigrateAbortsWhenTerraformStateMissing exercises the "no existing
+// local state" guidance path: when terraform.tfstate is absent at the
+// canonical local path, migrate must print the user-facing guidance and
+// return root.ErrAlreadyPrinted (so the printed message is not duplicated
+// by the root error renderer).
+func TestMigrateAbortsWhenTerraformStateMissing(t *testing.T) {
+	u := setupUcmFixture(t)
+	ctx, stderr := cmdio.NewTestContextWithStderr(t.Context())
+
+	localTerraformPath := deploy.LocalTfStatePath(u)
+	// Sanity: fixture must not pre-create the tfstate; the guard relies on
+	// os.ErrNotExist as the trigger.
+	_, statErr := os.Stat(localTerraformPath)
+	require.True(t, errors.Is(statErr, os.ErrNotExist), "fixture leaked a terraform.tfstate at %s", localTerraformPath)
+
+	err := checkLocalTerraformStatePresent(ctx, localTerraformPath)
+	require.ErrorIs(t, err, root.ErrAlreadyPrinted)
+	assert.Contains(t, stderr.String(), "no existing local state was found")
+	assert.Contains(t, stderr.String(), "DATABRICKS_UCM_ENGINE=direct")
+}
+
+// TestMigrateAbortsWhenDirectStateAlreadyExists exercises the
+// "resources.json already exists" guard. A user who has already migrated
+// (or deployed direct from scratch) must not have their direct state
+// silently overwritten — the verb errors out with a wrapped, non-printed
+// error so the standard error renderer surfaces it.
+func TestMigrateAbortsWhenDirectStateAlreadyExists(t *testing.T) {
+	u := setupUcmFixture(t)
+
+	localPath := phases.DirectStatePath(u)
+	tempStatePath := localPath + ".temp-migration"
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(localPath), 0o755))
+	require.NoError(t, os.WriteFile(localPath, []byte("{}"), 0o644))
+
+	err := checkDirectStateAbsent(localPath, tempStatePath)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, root.ErrAlreadyPrinted)
+	assert.Contains(t, err.Error(), "state file "+localPath+" already exists")
 }
