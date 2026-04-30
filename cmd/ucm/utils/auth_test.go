@@ -166,3 +166,93 @@ func TestMustWorkspaceClient_ProfileInYamlUsedVerbatim(t *testing.T) {
 	w := cmdctx.WorkspaceClient(cmd.Context())
 	assert.Equal(t, "PROFILE-UNIQUE", w.Config.Profile)
 }
+
+// setupAccountDatabricksCfg writes a .databrickscfg with one workspace profile
+// (used by TryConfigureUcm's workspace pass) and account profiles for the
+// account-side resolution.
+func setupAccountDatabricksCfg(t *testing.T) {
+	t.Helper()
+	tempHomeDir := t.TempDir()
+	homeEnvVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeEnvVar = "USERPROFILE"
+	}
+
+	cfg := []byte(strings.Join([]string{
+		"[WS-UNIQUE]",
+		"host = https://ws-unique.example.com",
+		"token = w",
+		"",
+		"[ACCT-UNIQUE]",
+		"host = https://accounts-unique.cloud.databricks.com",
+		"account_id = 11111111-1111-1111-1111-111111111111",
+		"token = a",
+		"",
+	}, "\n"))
+	err := os.WriteFile(filepath.Join(tempHomeDir, ".databrickscfg"), cfg, 0o644)
+	require.NoError(t, err)
+
+	t.Setenv("DATABRICKS_CONFIG_FILE", "")
+	t.Setenv(homeEnvVar, tempHomeDir)
+}
+
+func TestMustAccountClient_ResolvesFromYamlAccountHost(t *testing.T) {
+	testutil.CleanupEnvironment(t)
+	if runtime.GOOS == "windows" {
+		t.Setenv("PATH", `C:\Windows\System32`)
+	} else {
+		t.Setenv("PATH", "/usr/bin:/bin")
+	}
+	setupAccountDatabricksCfg(t)
+
+	rootPath := t.TempDir()
+	t.Chdir(rootPath)
+
+	y := "ucm:\n  name: t\n\nworkspace:\n" +
+		"  host: https://ws-unique.example.com\n" +
+		"  account_host: https://accounts-unique.cloud.databricks.com\n"
+	require.NoError(t, os.WriteFile(filepath.Join(rootPath, "ucm.yml"), []byte(y), 0o644))
+
+	cmd := &cobra.Command{Use: "metastore"}
+	cmd.PersistentFlags().String("target", "", "")
+	cmd.PersistentFlags().String("profile", "", "")
+	cmd.SetContext(cmdio.MockDiscard(t.Context()))
+
+	err := MustAccountClient(cmd, nil)
+
+	require.NoError(t, err)
+	require.False(t, logdiag.HasError(cmd.Context()))
+	a := cmdctx.AccountClient(cmd.Context())
+	assert.Equal(t, "ACCT-UNIQUE", a.Config.Profile)
+	assert.Equal(t, "https://accounts-unique.cloud.databricks.com", a.Config.Host)
+	assert.Equal(t, "11111111-1111-1111-1111-111111111111", a.Config.AccountID)
+}
+
+func TestMustAccountClient_NoAccountProfileSurfacesError(t *testing.T) {
+	testutil.CleanupEnvironment(t)
+	if runtime.GOOS == "windows" {
+		t.Setenv("PATH", `C:\Windows\System32`)
+	} else {
+		t.Setenv("PATH", "/usr/bin:/bin")
+	}
+	// Use the workspace-only databrickscfg helper: there are no account
+	// profiles to resolve, so MustAccountClient must surface a clean error
+	// rather than dropping into the picker (PATH is locked down so external
+	// auth helpers can't rescue the resolution either).
+	setupDatabricksCfg(t)
+
+	rootPath := t.TempDir()
+	t.Chdir(rootPath)
+
+	// No account_host configured and no account profiles in databrickscfg.
+	y := "ucm:\n  name: t\n\nworkspace:\n  host: https://nobody.example.com\n"
+	require.NoError(t, os.WriteFile(filepath.Join(rootPath, "ucm.yml"), []byte(y), 0o644))
+
+	cmd := &cobra.Command{Use: "metastore"}
+	cmd.PersistentFlags().String("target", "", "")
+	cmd.PersistentFlags().String("profile", "", "")
+	cmd.SetContext(cmdio.MockDiscard(t.Context()))
+
+	err := MustAccountClient(cmd, nil)
+	require.Error(t, err)
+}

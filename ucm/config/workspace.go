@@ -14,6 +14,13 @@ type Workspace struct {
 	Host    string `json:"host,omitempty"`
 	Profile string `json:"profile,omitempty"`
 
+	// AccountHost is the Databricks accounts endpoint used to construct the
+	// account client (e.g. "https://accounts.cloud.databricks.com"). UCM
+	// resolves account-scoped resources (metastores, metastore assignments)
+	// via this host while Host stays workspace-scoped — see
+	// ucm/account_client.go.
+	AccountHost string `json:"account_host,omitempty"`
+
 	// RootPath is the workspace filesystem root for this deployment. Defaults
 	// to "~/databricks/ucm/<name>/<target>" via DefineDefaultWorkspaceRoot and
 	// is expanded to "/Workspace/Users/<user>/..." by ExpandWorkspaceRoot.
