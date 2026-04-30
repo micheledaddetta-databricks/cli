@@ -10,7 +10,6 @@ import (
 	"github.com/databricks/cli/cmd/ucm/utils"
 	"github.com/databricks/cli/libs/flags"
 	"github.com/databricks/cli/libs/logdiag"
-	"github.com/databricks/cli/ucm/deploy/direct"
 	"github.com/databricks/cli/ucm/phases"
 	"github.com/spf13/cobra"
 )
@@ -93,7 +92,7 @@ the command still routes all live reads through the SDK regardless of engine.`,
 //	  comment: state="..." live="..."
 //
 // With no drift, prints a one-liner so CI logs carry a positive signal.
-func renderDriftText(out io.Writer, report *direct.Report) {
+func renderDriftText(out io.Writer, report *phases.Report) {
 	if !report.HasDrift() {
 		fmt.Fprintln(out, "No drift detected.")
 		return
@@ -112,7 +111,7 @@ func renderDriftText(out io.Writer, report *direct.Report) {
 
 // renderDriftJSON emits `{"drift": [...]}` to stdout. MarshalIndent keeps
 // the payload human-eyeable when piped through `jq .` or captured in CI logs.
-func renderDriftJSON(out io.Writer, report *direct.Report) error {
+func renderDriftJSON(out io.Writer, report *phases.Report) error {
 	buf, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return err
