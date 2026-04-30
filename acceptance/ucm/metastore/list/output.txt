@@ -1,0 +1,5 @@
+
+>>> [CLI] ucm metastore list
+Error: invalid Databricks Account configuration - host incorrect or account_id missing
+
+Exit code: 1
