@@ -120,8 +120,7 @@ func TestDeployDirectEngineSkipsTerraform(t *testing.T) {
 	logdiag.SetCollect(ctx, true)
 
 	phases.Deploy(ctx, f.u, phases.Options{
-		TerraformFactory:    fakeTfFactory(f.tf),
-		DirectClientFactory: fakeDirectClientFactory(),
+		TerraformFactory: fakeTfFactory(f.tf),
 	})
 
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
@@ -150,8 +149,7 @@ func TestDeployDirectEngineCallsApply(t *testing.T) {
 	logdiag.SetCollect(ctx, true)
 
 	phases.Deploy(ctx, f.u, phases.Options{
-		TerraformFactory:    fakeTfFactory(f.tf),
-		DirectClientFactory: fakeDirectClientFactory(),
+		TerraformFactory: fakeTfFactory(f.tf),
 	})
 
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))

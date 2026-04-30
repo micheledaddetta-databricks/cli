@@ -5,7 +5,6 @@ import (
 
 	"github.com/databricks/cli/ucm"
 	"github.com/databricks/cli/ucm/deploy"
-	"github.com/databricks/cli/ucm/deploy/direct"
 	"github.com/databricks/cli/ucm/deploy/terraform"
 )
 
@@ -41,23 +40,6 @@ func DefaultTerraformFactory(ctx context.Context, u *ucm.Ucm) (TerraformWrapper,
 	return terraform.New(ctx, u)
 }
 
-// DirectClientFactory constructs the direct-engine Client bound to u.
-// Production callers pass DefaultDirectClientFactory (which reads the memoized
-// *databricks.WorkspaceClient off u); tests hand in a factory that returns an
-// in-memory fake so the SDK surface never has to authenticate.
-type DirectClientFactory func(ctx context.Context, u *ucm.Ucm) (direct.Client, error)
-
-// DefaultDirectClientFactory is the production implementation used by the CLI
-// layer. It resolves the memoized workspace client off u and wraps it in the
-// narrower direct.Client interface.
-func DefaultDirectClientFactory(_ context.Context, u *ucm.Ucm) (direct.Client, error) {
-	w, err := u.WorkspaceClientE()
-	if err != nil {
-		return nil, err
-	}
-	return direct.NewClient(w), nil
-}
-
 // Options bundles the externally-supplied dependencies a phase needs at
 // runtime. The CLI layer populates Backend and the engine factory before
 // invoking plan/deploy/destroy; tests may omit Backend when exercising the
@@ -72,10 +54,6 @@ type Options struct {
 	// TerraformFactory produces the terraform wrapper bound to u. When nil,
 	// phases fall back to DefaultTerraformFactory.
 	TerraformFactory TerraformFactory
-
-	// DirectClientFactory produces the direct-engine SDK client bound to u.
-	// When nil, phases fall back to DefaultDirectClientFactory.
-	DirectClientFactory DirectClientFactory
 
 	// ForceLock mirrors the --force-lock flag: when true, Pull/Push and
 	// terraform Apply/Destroy override an existing deploy lock instead of
@@ -95,13 +73,4 @@ func (o Options) terraformFactoryOrDefault() TerraformFactory {
 		return o.TerraformFactory
 	}
 	return DefaultTerraformFactory
-}
-
-// directClientFactoryOrDefault returns o.DirectClientFactory or the
-// production factory when unset.
-func (o Options) directClientFactoryOrDefault() DirectClientFactory {
-	if o.DirectClientFactory != nil {
-		return o.DirectClientFactory
-	}
-	return DefaultDirectClientFactory
 }

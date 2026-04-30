@@ -18,7 +18,6 @@ import (
 	"github.com/databricks/cli/ucm"
 	"github.com/databricks/cli/ucm/config"
 	"github.com/databricks/cli/ucm/deploy"
-	"github.com/databricks/cli/ucm/deploy/direct"
 	ucmtf "github.com/databricks/cli/ucm/deploy/terraform"
 	"github.com/databricks/databricks-sdk-go/experimental/mocks"
 	"github.com/databricks/databricks-sdk-go/service/iam"
@@ -26,6 +25,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// directStateFileName is the basename of the direct-engine state blob the
+// states command surfaces. Mirrors phases.DirectStatePath's tail segment;
+// kept as a local literal so the debug tests don't reach into phases'
+// internals just to seed a fixture file.
+const directStateFileName = "resources.json"
 
 // runDebug invokes `<subcmd> <extra>` on the debug group rooted at workDir.
 // Returns captured stdout+stderr exactly like cmd/ucm/helpers_test.go's
@@ -223,7 +228,7 @@ func seedStateDir(t *testing.T, root, target string) {
 		0o644,
 	))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, direct.StateFileName),
+		filepath.Join(dir, directStateFileName),
 		[]byte(`{"version":1}`),
 		0o644,
 	))
@@ -243,7 +248,7 @@ func TestDebug_States_ListsSeededFiles(t *testing.T) {
 	// Each of the three seeded files must appear, referenced by its basename.
 	assert.Contains(t, stdout, deploy.UcmStateFileName)
 	assert.Contains(t, stdout, deploy.TfStateFileName)
-	assert.Contains(t, stdout, direct.StateFileName)
+	assert.Contains(t, stdout, directStateFileName)
 	// Forward-slashes only — matches the style guide and keeps output stable
 	// across OSes. Reject any backslash sneaking into the rendered path.
 	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {

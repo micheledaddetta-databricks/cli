@@ -36,7 +36,7 @@ type routeFlatGrants struct{}
 //
 // NOT YET WIRED INTO DefaultMutators. Several existing consumers
 // (ucm/render/groups.go grant summary, ucm/config/validate's grant checks,
-// ucm/deploy/direct + ucm/deploy/terraform/tfdyn grant rendering, and
+// ucm/deploy/terraform/tfdyn grant rendering, and
 // cmd/ucm/deployment/bind_resource.go) still read the flat
 // resources.grants map. Wiring this mutator now would silently zero those
 // surfaces. Wiring lands in a follow-up that migrates each consumer to

@@ -11,10 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// TODO(#83-followup): stamp a UUID into direct.State so DeploymentID is
-// non-empty on direct-engine deploys. Until then Compute returns an empty
-// DeploymentID whenever the active engine is direct, because direct's State
-// has no ID field and never writes ucm-state.json.
+// TODO(#83-followup): stamp a UUID into the direct-engine state file so
+// DeploymentID is non-empty on direct-engine deploys. Until then Compute
+// returns an empty DeploymentID whenever the active engine is direct,
+// because the direct state has no ID field and never writes ucm-state.json.
 
 // Compute builds the Metadata record for u. The DeploymentID is read from the
 // local ucm-state.json cache so the blob ties to the same State.ID that Push

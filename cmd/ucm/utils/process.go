@@ -215,10 +215,9 @@ func ProcessUcm(cmd *cobra.Command, opts ProcessOptions) (*ucm.Ucm, error) {
 		// State pull happens inside phases.Plan/Deploy/Destroy, not at the
 		// cmd layer. The bundle parallel runs PullResourcesState here;
 		// ucm's verbs drive their own phase calls which Initialize and
-		// Pull internally. Direct-engine state DB open is handled inside
-		// ucm/deploy/direct (tracked in #95) — ProcessUcm no longer gates
-		// on engine type, so direct flows through naturally and any
-		// not-yet-wired code path errors at its own boundary.
+		// Pull internally. ProcessUcm no longer gates on engine type, so
+		// direct flows through naturally and any not-yet-wired code path
+		// errors at its own boundary.
 
 		// These are not safe in plan/deploy because they insert empty config settings for deleted resources.
 		if opts.InitIDs || opts.ErrorOnEmptyState {

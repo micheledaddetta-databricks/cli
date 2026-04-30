@@ -59,8 +59,7 @@ func TestPlanDirectEngineReturnsEmptyOutcome(t *testing.T) {
 	logdiag.SetCollect(ctx, true)
 
 	result := phases.Plan(ctx, f.u, phases.Options{
-		TerraformFactory:    fakeTfFactory(f.tf),
-		DirectClientFactory: fakeDirectClientFactory(),
+		TerraformFactory: fakeTfFactory(f.tf),
 	})
 
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
@@ -88,8 +87,7 @@ func TestPlanDirectEngineNonEmptyPlan(t *testing.T) {
 	logdiag.SetCollect(ctx, true)
 
 	result := phases.Plan(ctx, f.u, phases.Options{
-		TerraformFactory:    fakeTfFactory(f.tf),
-		DirectClientFactory: fakeDirectClientFactory(),
+		TerraformFactory: fakeTfFactory(f.tf),
 	})
 
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))

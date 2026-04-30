@@ -12,7 +12,7 @@ import (
 	"github.com/databricks/cli/cmd/ucm/utils"
 	"github.com/databricks/cli/libs/logdiag"
 	"github.com/databricks/cli/ucm/deploy"
-	"github.com/databricks/cli/ucm/deploy/direct"
+	"github.com/databricks/cli/ucm/phases"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +47,7 @@ func NewStatesCommand() *cobra.Command {
 		paths := []string{
 			filepath.Join(localDir, deploy.UcmStateFileName),
 			filepath.Join(localDir, "terraform", deploy.TfStateFileName),
-			filepath.Join(localDir, direct.StateFileName),
+			phases.DirectStatePath(u),
 		}
 
 		var lines []string
