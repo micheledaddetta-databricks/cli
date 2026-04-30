@@ -150,6 +150,37 @@ func getCommonArgs(cmd *cobra.Command) ([]string, string) {
 	return args, argsStr
 }
 
+// checkLocalTerraformStatePresent returns nil when terraform.tfstate exists at
+// path. If the file is absent it logs the user-facing guidance and returns
+// root.ErrAlreadyPrinted so the caller surfaces the printed message verbatim.
+// Any other stat error is wrapped.
+func checkLocalTerraformStatePresent(ctx context.Context, path string) error {
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		cmdio.LogString(ctx, `Error: This command migrates the existing Terraform state file (terraform.tfstate) to a direct deployment state file (resources.json). However, no existing local state was found.
+
+To start using direct engine, set "engine: direct" under ucm in your ucm.yml or deploy with DATABRICKS_UCM_ENGINE=direct env var set.`)
+		return root.ErrAlreadyPrinted
+	}
+	return fmt.Errorf("reading %s: %w", path, err)
+}
+
+// checkDirectStateAbsent fails when either the in-progress temp state file or
+// the final direct state file already exists. The temp file means a previous
+// migration was interrupted; the final file means migration already ran.
+func checkDirectStateAbsent(localPath, tempStatePath string) error {
+	if _, err := os.Stat(tempStatePath); err == nil {
+		return fmt.Errorf("temporary state file %s already exists, another migration is in progress or was interrupted. In the latter case, delete the file", tempStatePath)
+	}
+	if _, err := os.Stat(localPath); err == nil {
+		return fmt.Errorf("state file %s already exists", localPath)
+	}
+	return nil
+}
+
 // newMigrateCommand returns `databricks ucm deployment migrate`.
 //
 // Migrates a ucm project from the terraform engine to the direct engine by
@@ -209,14 +240,8 @@ to the workspace so that subsequent deploys of this project use direct deploymen
 		// reads via state pull. The direct state file is fresh (we error if
 		// it already exists), so there is no second source to reconcile.
 		localTerraformPath := deploy.LocalTfStatePath(u)
-		if _, err = os.Stat(localTerraformPath); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				cmdio.LogString(ctx, `Error: This command migrates the existing Terraform state file (terraform.tfstate) to a direct deployment state file (resources.json). However, no existing local state was found.
-
-To start using direct engine, set "engine: direct" under ucm in your ucm.yml or deploy with DATABRICKS_UCM_ENGINE=direct env var set.`)
-				return root.ErrAlreadyPrinted
-			}
-			return fmt.Errorf("reading %s: %w", localTerraformPath, err)
+		if err := checkLocalTerraformStatePresent(ctx, localTerraformPath); err != nil {
+			return err
 		}
 
 		header, err := readTerraformStateHeader(localTerraformPath)
@@ -243,16 +268,13 @@ To start using direct engine, set "engine: direct" under ucm in your ucm.yml or 
 
 		localPath := phases.DirectStatePath(u)
 		tempStatePath := localPath + ".temp-migration"
-		if _, err = os.Stat(tempStatePath); err == nil {
-			return fmt.Errorf("temporary state file %s already exists, another migration is in progress or was interrupted. In the latter case, delete the file", tempStatePath)
-		}
 		// "Already using direct" is detected by the local resources.json
 		// file, not via StateDesc (which UCM does not have today; see #145).
 		// A user who deletes resources.json and re-runs migrate against a
 		// still-present terraform.tfstate.backup would re-create the direct
 		// state cleanly.
-		if _, err = os.Stat(localPath); err == nil {
-			return fmt.Errorf("state file %s already exists", localPath)
+		if err := checkDirectStateAbsent(localPath, tempStatePath); err != nil {
+			return err
 		}
 
 		// Run plan check unless --noplancheck is set.
