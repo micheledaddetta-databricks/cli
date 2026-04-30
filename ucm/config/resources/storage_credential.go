@@ -14,6 +14,12 @@ import (
 type StorageCredential struct {
 	catalog.CreateStorageCredential
 
+	// Grants exists solely to keep convert.Normalize from dropping nested-form
+	// grants during typed-config materialization. After
+	// FlattenNestedResources + RouteFlatGrants, this map is the canonical
+	// per-resource grants surface that dresources reads.
+	Grants map[string]*Grant `json:"grants,omitempty"`
+
 	// ID is the deployed resource's terraform-state ID. Populated by
 	// statemgmt.Load from the local tfstate; never written from ucm.yml.
 	ID string `json:"id,omitempty" ucm:"readonly"`
