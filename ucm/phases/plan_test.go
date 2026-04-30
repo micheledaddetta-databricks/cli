@@ -1,12 +1,16 @@
 package phases_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/databricks/cli/libs/logdiag"
 	"github.com/databricks/cli/ucm/config/engine"
+	"github.com/databricks/cli/ucm/config/resources"
 	"github.com/databricks/cli/ucm/deploy/terraform"
+	"github.com/databricks/cli/ucm/deployplan"
 	"github.com/databricks/cli/ucm/phases"
+	"github.com/databricks/databricks-sdk-go/service/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +70,38 @@ func TestPlanDirectEngineReturnsEmptyOutcome(t *testing.T) {
 	assert.Equal(t, 0, f.tf.RenderCalls)
 	assert.Equal(t, 0, f.tf.InitCalls)
 	assert.Equal(t, 0, f.tf.PlanCalls)
+}
+
+// TestPlanDirectEngineNonEmptyPlan exercises the direct-engine call sequence
+// end-to-end with a single catalog resource: dstate.Database.Open is invoked
+// against DirectStatePath(u), CalculatePlan walks the configRoot, sees no
+// existing state entry, and emits a Create action. This catches regressions
+// in the wiring between phases.planDirect and ucm/direct.DeploymentUcm that
+// the empty-config short-circuit cannot reach.
+func TestPlanDirectEngineNonEmptyPlan(t *testing.T) {
+	f := newFixture(t)
+	f.u.Config.Ucm.Engine = engine.EngineDirect
+	f.u.Config.Resources.Catalogs = map[string]*resources.Catalog{
+		"main": {CreateCatalog: catalog.CreateCatalog{Name: "main"}},
+	}
+	ctx := logdiag.InitContext(t.Context())
+	logdiag.SetCollect(ctx, true)
+
+	result := phases.Plan(ctx, f.u, phases.Options{
+		TerraformFactory:    fakeTfFactory(f.tf),
+		DirectClientFactory: fakeDirectClientFactory(),
+	})
+
+	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
+	require.NotNil(t, result)
+	require.NotNil(t, result.Plan)
+	entry, ok := result.Plan.Plan["resources.catalogs.main"]
+	require.True(t, ok, "plan missing entry for resources.catalogs.main; have: %v", result.Plan.Plan)
+	assert.Equal(t, deployplan.Create, entry.Action)
+	assert.True(t, result.HasChanges)
+	// Plan never advances state — the local state file must NOT be written.
+	_, statErr := os.Stat(phases.DirectStatePath(f.u))
+	assert.True(t, os.IsNotExist(statErr), "Plan must not Finalize: %v", statErr)
 }
 
 func TestPreDeployChecksNoResourcesNoDiags(t *testing.T) {

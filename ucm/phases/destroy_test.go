@@ -4,12 +4,14 @@ import (
 	"github.com/databricks/databricks-sdk-go/service/catalog"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/databricks/cli/libs/cmdio"
 	"github.com/databricks/cli/libs/logdiag"
 	"github.com/databricks/cli/ucm/config/engine"
 	"github.com/databricks/cli/ucm/config/resources"
+	"github.com/databricks/cli/ucm/direct/dstate"
 	"github.com/databricks/cli/ucm/phases"
 	"github.com/databricks/databricks-sdk-go/apierr"
 	"github.com/databricks/databricks-sdk-go/experimental/mocks"
@@ -17,6 +19,19 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// seedDirectStateCatalog writes a direct-engine state file at
+// DirectStatePath(u) with a single catalog entry. Mirrors the on-disk shape
+// produced by ucm/direct.DeploymentUcm.Apply on a successful create so destroy
+// tests can drive CalculatePlan(nil) down its delete branch without first
+// running a deploy.
+func seedDirectStateCatalog(t *testing.T, statePath, catalogName string) {
+	t.Helper()
+	var db dstate.DeploymentState
+	require.NoError(t, db.Open(statePath))
+	require.NoError(t, db.SaveState("resources.catalogs."+catalogName, catalogName, &catalog.CreateCatalog{Name: catalogName}, nil))
+	require.NoError(t, db.Finalize())
+}
 
 func TestDestroyHappyPath(t *testing.T) {
 	f := newFixture(t)
@@ -54,6 +69,48 @@ func TestDestroyDirectEngineSkipsTerraform(t *testing.T) {
 
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
 	assert.Equal(t, 0, f.tf.DestroyCalls)
+}
+
+// TestDestroyDirectEngineDeletesResources exercises the direct-engine destroy
+// call sequence end-to-end: a pre-seeded state file is opened by
+// dstate.Database.Open at DirectStatePath(u), CalculatePlan(nil) marks the
+// recorded catalog for Delete, Apply fires Catalogs.Delete on the SDK, and
+// Finalize rewrites the (now-empty) state file. Together they pin the wiring
+// the empty-config short-circuit cannot reach.
+func TestDestroyDirectEngineDeletesResources(t *testing.T) {
+	f := newFixture(t)
+	f.u.Config.Ucm.Engine = engine.EngineDirect
+	statePath := phases.DirectStatePath(f.u)
+	seedDirectStateCatalog(t, statePath, "main")
+
+	// CalculatePlan re-reads the remote state for every Delete entry to
+	// detect resources that vanished out-of-band; we mirror the live entry.
+	f.mockWS.GetMockCatalogsAPI().EXPECT().
+		GetByName(mock.Anything, "main").
+		Return(&catalog.CatalogInfo{Name: "main"}, nil)
+	f.mockWS.GetMockCatalogsAPI().EXPECT().
+		Delete(mock.Anything, mock.MatchedBy(func(r catalog.DeleteCatalogRequest) bool { return r.Name == "main" })).
+		Return(nil)
+
+	ctx := logdiag.InitContext(t.Context())
+	logdiag.SetCollect(ctx, true)
+	ctx, _ = cmdio.NewTestContextWithStderr(ctx)
+
+	phases.Destroy(ctx, f.u, phases.Options{
+		TerraformFactory:    fakeTfFactory(f.tf),
+		DirectClientFactory: fakeDirectClientFactory(),
+		AutoApprove:         true,
+	})
+
+	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
+	assert.Equal(t, 0, f.tf.DestroyCalls, "direct engine must not invoke terraform Destroy")
+	// Finalize rewrote the state file with the catalog entry removed.
+	var db dstate.DeploymentState
+	require.NoError(t, db.Open(statePath))
+	assert.Empty(t, db.Data.State, "state file must be empty after destroy Finalize")
+	// Direct engine never touches remote terraform-state storage.
+	_, err := os.Stat(statePath)
+	require.NoError(t, err)
 }
 
 func TestDestroyBailsOnDestroyError(t *testing.T) {

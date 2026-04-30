@@ -3,6 +3,7 @@ package phases_test
 import (
 	"encoding/json"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -126,6 +127,42 @@ func TestDeployDirectEngineSkipsTerraform(t *testing.T) {
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
 	assert.Equal(t, 0, f.tf.ApplyCalls)
 	assert.Equal(t, -1, readRemoteSeq(t, f), "direct engine must never touch remote state")
+}
+
+// TestDeployDirectEngineCallsApply exercises the direct-engine call sequence
+// end-to-end: dstate.Database.Open against DirectStatePath(u), CalculatePlan
+// with one resource, Apply (which fires Catalogs.Create on the SDK), and
+// Finalize (which writes the state file). Asserting on the post-deploy state
+// file's existence is the only unit-test-friendly proxy for "Finalize ran";
+// asserting on Catalogs.Create is the proxy for "Apply ran". Together they
+// pin the wiring the empty-config short-circuit cannot reach.
+func TestDeployDirectEngineCallsApply(t *testing.T) {
+	f := newFixture(t)
+	f.u.Config.Ucm.Engine = engine.EngineDirect
+	f.u.Config.Resources.Catalogs = map[string]*resources.Catalog{
+		"main": {CreateCatalog: catalog.CreateCatalog{Name: "main"}},
+	}
+	f.mockWS.GetMockCatalogsAPI().EXPECT().
+		Create(mock.Anything, mock.MatchedBy(func(c catalog.CreateCatalog) bool { return c.Name == "main" })).
+		Return(&catalog.CatalogInfo{Name: "main"}, nil)
+
+	ctx := logdiag.InitContext(t.Context())
+	logdiag.SetCollect(ctx, true)
+
+	phases.Deploy(ctx, f.u, phases.Options{
+		TerraformFactory:    fakeTfFactory(f.tf),
+		DirectClientFactory: fakeDirectClientFactory(),
+	})
+
+	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
+	assert.Equal(t, 0, f.tf.ApplyCalls, "direct engine must not invoke terraform Apply")
+	// Finalize wrote the state file at DirectStatePath(u).
+	statePath := phases.DirectStatePath(f.u)
+	info, err := os.Stat(statePath)
+	require.NoError(t, err, "direct state file must exist after Finalize: %s", statePath)
+	assert.Greater(t, info.Size(), int64(0), "direct state file must be non-empty after Finalize")
+	// Direct engine never touches remote terraform-state storage.
+	assert.Equal(t, -1, readRemoteSeq(t, f), "direct engine must never push remote state")
 }
 
 func TestDeployBailsOnApplyError(t *testing.T) {
