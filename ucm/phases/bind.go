@@ -2,6 +2,7 @@ package phases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/databricks/cli/libs/log"
@@ -9,7 +10,9 @@ import (
 	"github.com/databricks/cli/ucm"
 	"github.com/databricks/cli/ucm/config/mutator"
 	"github.com/databricks/cli/ucm/deploy"
-	"github.com/databricks/cli/ucm/deploy/direct"
+	"github.com/databricks/cli/ucm/direct/dresources"
+	"github.com/databricks/cli/ucm/direct/dstate"
+	"github.com/databricks/databricks-sdk-go/apierr"
 )
 
 // BindRequest bundles the operator-supplied inputs for a single bind. Name is
@@ -113,34 +116,80 @@ func bindTerraform(ctx context.Context, u *ucm.Ucm, opts Options, req BindReques
 	}
 }
 
-func bindDirect(ctx context.Context, u *ucm.Ucm, opts Options, req BindRequest) {
+// bindDirect resolves the dresources adapter for the requested kind, reads
+// the live UC object via the SDK, RemapState's it into the saved-state shape
+// that ucm/direct.Apply persists on a normal create, and writes it through
+// dstate.DeploymentState.SaveState. Refuses to overwrite an entry that is
+// already bound — operators must `ucm deployment unbind` first to rebind a
+// re-discovered live object. Mirrors importDirect; bind and import share the
+// same per-resource primitives.
+func bindDirect(ctx context.Context, u *ucm.Ucm, _ Options, req BindRequest) {
 	ucm.ApplyContext(ctx, u, mutator.ResolveVariableReferencesOnlyResources("resources"))
 	if logdiag.HasError(ctx) {
 		return
 	}
 
-	factory := opts.directClientFactoryOrDefault()
-	client, err := factory(ctx, u)
+	client, err := u.WorkspaceClientE()
 	if err != nil {
-		logdiag.LogError(ctx, fmt.Errorf("resolve direct client: %w", err))
+		logdiag.LogError(ctx, fmt.Errorf("resolve workspace client: %w", err))
 		return
 	}
 
-	statePath := direct.StatePath(u)
-	state, err := direct.LoadState(statePath)
+	adapters, err := dresources.InitAll(client)
 	if err != nil {
-		logdiag.LogError(ctx, fmt.Errorf("load direct state: %w", err))
+		logdiag.LogError(ctx, fmt.Errorf("init resource adapters: %w", err))
+		return
+	}
+	plural := pluralKind(req.Kind)
+	adapter, ok := adapters[plural]
+	if !ok {
+		logdiag.LogError(ctx, fmt.Errorf("ucm bind: no adapter for kind %q", req.Kind))
 		return
 	}
 
-	if err := direct.ImportResource(ctx, u, client, state, string(req.Kind), req.Name, req.Key); err != nil {
-		logdiag.LogError(ctx, fmt.Errorf("direct bind: %w", err))
+	var db dstate.DeploymentState
+	if err := db.Open(DirectStatePath(u)); err != nil {
+		logdiag.LogError(ctx, fmt.Errorf("open direct state: %w", err))
 		return
 	}
 
-	if err := direct.SaveState(statePath, state); err != nil {
-		logdiag.LogError(ctx, fmt.Errorf("save direct state: %w", err))
+	stateKey := fmt.Sprintf("resources.%s.%s", plural, req.Key)
+	if _, exists := db.Data.State[stateKey]; exists {
+		logdiag.LogError(ctx, fmt.Errorf("ucm bind: %s is already bound in state — use `ucm deployment unbind` first", stateKey))
+		return
 	}
+
+	live, err := adapter.DoRead(ctx, req.Name)
+	if err != nil {
+		if errors.Is(err, apierr.ErrResourceDoesNotExist) || errors.Is(err, apierr.ErrNotFound) {
+			logdiag.LogError(ctx, fmt.Errorf("ucm bind: %s %q not found in Unity Catalog", req.Kind, req.Name))
+			return
+		}
+		logdiag.LogError(ctx, fmt.Errorf("read %s %q: %w", req.Kind, req.Name, err))
+		return
+	}
+	if live == nil {
+		logdiag.LogError(ctx, fmt.Errorf("ucm bind: %s %q not found in Unity Catalog", req.Kind, req.Name))
+		return
+	}
+
+	saved, err := adapter.RemapState(live)
+	if err != nil {
+		logdiag.LogError(ctx, fmt.Errorf("remap %s state: %w", req.Kind, err))
+		return
+	}
+
+	if err := db.SaveState(stateKey, req.Name, saved, nil); err != nil {
+		logdiag.LogError(ctx, fmt.Errorf("save state for %s: %w", stateKey, err))
+		return
+	}
+
+	if err := db.Finalize(); err != nil {
+		logdiag.LogError(ctx, fmt.Errorf("finalize direct state: %w", err))
+		return
+	}
+
+	log.Infof(ctx, "direct: bound %s %s as %s", req.Kind, req.Name, stateKey)
 }
 
 func unbindTerraform(ctx context.Context, u *ucm.Ucm, opts Options, req UnbindRequest) {
@@ -180,21 +229,32 @@ func unbindTerraform(ctx context.Context, u *ucm.Ucm, opts Options, req UnbindRe
 	}
 }
 
-func unbindDirect(ctx context.Context, u *ucm.Ucm, opts Options, req UnbindRequest) {
-	_ = opts // direct-engine unbind does not need Options.Backend
-	statePath := direct.StatePath(u)
-	state, err := direct.LoadState(statePath)
-	if err != nil {
-		logdiag.LogError(ctx, fmt.Errorf("load direct state: %w", err))
+// unbindDirect drops the recorded state entry for req.Key without touching
+// the remote UC object. It is a state-only operation: open the database,
+// guard against a missing key, DeleteState, Finalize. The Initialize step
+// has already validated that the engine is direct.
+func unbindDirect(ctx context.Context, u *ucm.Ucm, _ Options, req UnbindRequest) {
+	var db dstate.DeploymentState
+	if err := db.Open(DirectStatePath(u)); err != nil {
+		logdiag.LogError(ctx, fmt.Errorf("open direct state: %w", err))
 		return
 	}
 
-	if err := direct.UnbindResource(ctx, state, string(req.Kind), req.Key); err != nil {
-		logdiag.LogError(ctx, fmt.Errorf("direct unbind: %w", err))
+	stateKey := fmt.Sprintf("resources.%s.%s", pluralKind(req.Kind), req.Key)
+	if _, exists := db.Data.State[stateKey]; !exists {
+		logdiag.LogError(ctx, fmt.Errorf("ucm unbind: %s is not bound in state", stateKey))
 		return
 	}
 
-	if err := direct.SaveState(statePath, state); err != nil {
-		logdiag.LogError(ctx, fmt.Errorf("save direct state: %w", err))
+	if err := db.DeleteState(stateKey); err != nil {
+		logdiag.LogError(ctx, fmt.Errorf("delete state entry %s: %w", stateKey, err))
+		return
 	}
+
+	if err := db.Finalize(); err != nil {
+		logdiag.LogError(ctx, fmt.Errorf("finalize direct state: %w", err))
+		return
+	}
+
+	log.Infof(ctx, "direct: unbound %s", stateKey)
 }
