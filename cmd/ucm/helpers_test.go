@@ -20,7 +20,6 @@ import (
 	ucmpkg "github.com/databricks/cli/ucm"
 	"github.com/databricks/cli/ucm/config"
 	"github.com/databricks/cli/ucm/deploy"
-	"github.com/databricks/cli/ucm/deploy/direct"
 	ucmfiler "github.com/databricks/cli/ucm/deploy/filer"
 	"github.com/databricks/cli/ucm/deploy/terraform"
 	"github.com/databricks/cli/ucm/phases"
@@ -118,20 +117,10 @@ func (f *fakeTf) StateRm(_ context.Context, _ *ucmpkg.Ucm, address string) error
 // verbHarness bundles the fake terraform wrapper, the remote-state filer
 // backing Pull/Push, and an override of utils.BuildPhaseOptionsHook so the
 // verb under test runs against the fake instead of reaching for a real
-// workspace client. directClient is optional — set it via WithDirectClient
-// before runVerb to route the direct-engine verbs (drift, and the direct
-// branches of plan/deploy/destroy) through an in-memory fake.
+// workspace client.
 type verbHarness struct {
-	tf           *fakeTf
-	remote       libsfiler.Filer
-	directClient direct.Client
-}
-
-// WithDirectClient configures the harness to hand the given client back from
-// DirectClientFactory. Returns the harness for fluent setup.
-func (h *verbHarness) WithDirectClient(c direct.Client) *verbHarness {
-	h.directClient = c
-	return h
+	tf     *fakeTf
+	remote libsfiler.Filer
 }
 
 // newVerbHarness builds a harness keyed to a temp-dir "remote" filer and
@@ -152,7 +141,7 @@ func newVerbHarness(t *testing.T) *verbHarness {
 
 	prev := utils.BuildPhaseOptionsHook
 	utils.BuildPhaseOptionsHook = func(_ context.Context, _ *ucmpkg.Ucm) (phases.Options, error) {
-		opts := phases.Options{
+		return phases.Options{
 			Backend: deploy.Backend{
 				StateFiler: ucmfiler.NewStateFilerFromFiler(remote),
 				LockFiler:  remote,
@@ -161,13 +150,7 @@ func newVerbHarness(t *testing.T) *verbHarness {
 			TerraformFactory: func(_ context.Context, _ *ucmpkg.Ucm) (phases.TerraformWrapper, error) {
 				return h.tf, nil
 			},
-		}
-		if h.directClient != nil {
-			opts.DirectClientFactory = func(_ context.Context, _ *ucmpkg.Ucm) (direct.Client, error) {
-				return h.directClient, nil
-			}
-		}
-		return opts, nil
+		}, nil
 	}
 	t.Cleanup(func() { utils.BuildPhaseOptionsHook = prev })
 

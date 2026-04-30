@@ -63,8 +63,7 @@ func TestDestroyDirectEngineSkipsTerraform(t *testing.T) {
 	logdiag.SetCollect(ctx, true)
 
 	phases.Destroy(ctx, f.u, phases.Options{
-		TerraformFactory:    fakeTfFactory(f.tf),
-		DirectClientFactory: fakeDirectClientFactory(),
+		TerraformFactory: fakeTfFactory(f.tf),
 	})
 
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))
@@ -97,9 +96,8 @@ func TestDestroyDirectEngineDeletesResources(t *testing.T) {
 	ctx, _ = cmdio.NewTestContextWithStderr(ctx)
 
 	phases.Destroy(ctx, f.u, phases.Options{
-		TerraformFactory:    fakeTfFactory(f.tf),
-		DirectClientFactory: fakeDirectClientFactory(),
-		AutoApprove:         true,
+		TerraformFactory: fakeTfFactory(f.tf),
+		AutoApprove:      true,
 	})
 
 	require.False(t, logdiag.HasError(ctx), "unexpected errors: %v", logdiag.FlushCollected(ctx))

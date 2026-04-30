@@ -11,9 +11,9 @@ import (
 // BuildPhaseOptionsHook is the package-level test seam used by ProcessUcm and
 // every verb that needs phases.Options. Tests in cmd/ucm and
 // cmd/ucm/deployment overwrite this variable to inject a fake
-// TerraformFactory + DirectClientFactory and a local-disk Backend without
-// standing up a real workspace client. Production callers get the default
-// implementation which resolves the state backend from ctx + ucm config.
+// TerraformFactory and a local-disk Backend without standing up a real
+// workspace client. Production callers get the default implementation which
+// resolves the state backend from ctx + ucm config.
 //
 // Centralised here (rather than duplicated per cmd subpackage) so the seam
 // matches TestProcessHook and there is a single place to swap the production
