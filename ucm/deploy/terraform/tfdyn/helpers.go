@@ -1,6 +1,10 @@
 package tfdyn
 
-import "github.com/databricks/cli/libs/dyn"
+import (
+	"sort"
+
+	"github.com/databricks/cli/libs/dyn"
+)
 
 // appendString adds key=fallback to pairs when vin does not already define
 // the field. If vin sets the field, the caller's value wins and its
@@ -49,13 +53,33 @@ func appendBoolIfSet(pairs *[]dyn.Pair, vin dyn.Value, key string) {
 	})
 }
 
-// mapFromValue returns v as a map-typed dyn.Value when it holds at least
-// one key; otherwise the second return is false so callers can skip
-// emitting an empty map.
+// mapFromValue returns v as a map-typed dyn.Value with pairs sorted by key
+// when v holds at least one entry; otherwise the second return is false so
+// callers can skip emitting an empty map. Sorting matters because typed
+// config Tags / Properties / Options are Go maps (`map[string]string`)
+// whose iteration order leaks into convert.Normalize. Without it the
+// generated tf.json drifts byte-for-byte across runs.
 func mapFromValue(v dyn.Value) (dyn.Value, bool) {
 	m, ok := v.AsMap()
 	if !ok || m.Len() == 0 {
 		return dyn.InvalidValue, false
 	}
-	return v, true
+	return sortMapByKeys(v), true
+}
+
+// sortMapByKeys returns a copy of v whose pairs are sorted lexicographically
+// by key. Non-map values are returned unchanged. The sort is stable and
+// deterministic so callers can build byte-identical tf.json across runs.
+func sortMapByKeys(v dyn.Value) dyn.Value {
+	m, ok := v.AsMap()
+	if !ok {
+		return v
+	}
+	pairs := m.Pairs()
+	sorted := make([]dyn.Pair, len(pairs))
+	copy(sorted, pairs)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Key.MustString() < sorted[j].Key.MustString()
+	})
+	return dyn.NewValue(dyn.NewMappingFromPairs(sorted), v.Locations())
 }

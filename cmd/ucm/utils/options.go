@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 
 	"github.com/databricks/cli/ucm"
 	"github.com/databricks/cli/ucm/deploy"
@@ -28,6 +29,9 @@ var BuildPhaseOptionsHook = DefaultBuildPhaseOptions
 // constructor is expensive (binary resolution + working dir) and we only
 // stand it up on first invocation.
 func DefaultBuildPhaseOptions(ctx context.Context, u *ucm.Ucm) (phases.Options, error) {
+	if u == nil {
+		return phases.Options{}, errors.New("ucm: cannot build phase options — ProcessUcm did not return a *ucm.Ucm; ensure the verb's PreRunE chain ran successfully before calling BuildPhaseOptionsHook")
+	}
 	w, err := u.WorkspaceClientE()
 	if err != nil {
 		return phases.Options{}, err
