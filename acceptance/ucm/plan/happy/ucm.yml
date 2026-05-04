@@ -12,3 +12,17 @@ resources:
     raw:
       name: raw
       catalog_name: main
+
+  grants:
+    main_admin:
+      securable:
+        type: catalog
+        name: main
+      principal: admins
+      privileges: [USE_CATALOG]
+    raw_reader:
+      securable:
+        type: schema
+        name: raw
+      principal: readers
+      privileges: [USE_SCHEMA]

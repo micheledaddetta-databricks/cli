@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/databricks/cli/libs/structs/structvar"
+	"github.com/databricks/cli/ucm/config/resources"
 	"github.com/databricks/databricks-sdk-go"
 	"github.com/databricks/databricks-sdk-go/service/catalog"
 )
@@ -42,26 +44,67 @@ func PrepareGrantsInputConfig(inputConfig any, node string) (*structvar.StructVa
 		return nil, fmt.Errorf("unsupported grants resource type: %s", resourceType)
 	}
 
-	grantsPtr, ok := inputConfig.(*[]catalog.PrivilegeAssignment)
-	if !ok {
-		return nil, fmt.Errorf("expected *[]catalog.PrivilegeAssignment, got %T", inputConfig)
+	assignments, err := assignmentsFromInput(inputConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	// Backend sorts privileges, so we sort here as well.
-	for i := range *grantsPtr {
-		slices.Sort((*grantsPtr)[i].Privileges)
+	for i := range assignments {
+		slices.Sort(assignments[i].Privileges)
 	}
 
 	return &structvar.StructVar{
 		Value: &GrantsState{
 			SecurableType: securableType,
 			FullName:      "",
-			EmbeddedSlice: *grantsPtr,
+			EmbeddedSlice: assignments,
 		},
 		Refs: map[string]string{
 			"full_name": "${" + baseNode + ".id}",
 		},
 	}, nil
+}
+
+// assignmentsFromInput coerces the input config — which may arrive as the
+// legacy []catalog.PrivilegeAssignment slice or as the ucm-native
+// map[string]*resources.Grant produced by RouteFlatGrants — into a
+// deterministically-ordered []catalog.PrivilegeAssignment.
+func assignmentsFromInput(inputConfig any) ([]catalog.PrivilegeAssignment, error) {
+	switch v := inputConfig.(type) {
+	case *[]catalog.PrivilegeAssignment:
+		if v == nil {
+			return nil, nil
+		}
+		return *v, nil
+	case *map[string]*resources.Grant:
+		if v == nil {
+			return nil, nil
+		}
+		keys := make([]string, 0, len(*v))
+		for k := range *v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out := make([]catalog.PrivilegeAssignment, 0, len(keys))
+		for _, k := range keys {
+			g := (*v)[k]
+			if g == nil {
+				continue
+			}
+			privs := make([]catalog.Privilege, 0, len(g.Privileges))
+			for _, p := range g.Privileges {
+				privs = append(privs, catalog.Privilege(p))
+			}
+			out = append(out, catalog.PrivilegeAssignment{
+				Principal:  g.Principal,
+				Privileges: privs,
+			})
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("expected *[]catalog.PrivilegeAssignment or *map[string]*resources.Grant, got %T", inputConfig)
+	}
 }
 
 type ResourceGrants struct {

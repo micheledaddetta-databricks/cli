@@ -34,13 +34,10 @@ type routeFlatGrants struct{}
 // table, securable.name with no matching parent resource, or a key
 // collision against an already-nested grant.
 //
-// NOT YET WIRED INTO DefaultMutators. Several existing consumers
-// (ucm/render/groups.go grant summary, ucm/config/validate's grant checks,
-// ucm/deploy/terraform/tfdyn grant rendering, and
-// cmd/ucm/deployment/bind_resource.go) still read the flat
-// resources.grants map. Wiring this mutator now would silently zero those
-// surfaces. Wiring lands in a follow-up that migrates each consumer to
-// the nested form.
+// The securable field is intentionally preserved on routed grants (rather
+// than being stripped as redundant) so consumers reading via
+// Resources.AllGrants can rely on g.Securable.{Type, Name} being populated
+// regardless of whether the grant originated from the flat or nested form.
 func RouteFlatGrants() ucm.Mutator { return &routeFlatGrants{} }
 
 func (m *routeFlatGrants) Name() string { return "RouteFlatGrants" }
@@ -142,7 +139,6 @@ func (m *routeFlatGrants) Apply(_ context.Context, u *ucm.Ucm) diag.Diagnostics 
 				}
 			}
 
-			body := removeKeys(grantBody, "securable")
 			if staged[plural] == nil {
 				staged[plural] = make(map[string]map[string]stagedGrant)
 			}
@@ -150,7 +146,7 @@ func (m *routeFlatGrants) Apply(_ context.Context, u *ucm.Ucm) diag.Diagnostics 
 				staged[plural][secName] = make(map[string]stagedGrant)
 			}
 			staged[plural][secName][grantKey] = stagedGrant{
-				body: dyn.NewValue(body, gp.Value.Locations()),
+				body: gp.Value,
 				key:  gp.Key,
 			}
 		}

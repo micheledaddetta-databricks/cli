@@ -3,6 +3,8 @@
 Warning: cannot initialize resource URLs: workspace.host is not set
 
 create catalogs.main
+create catalogs.main.grants
 create schemas.raw
+create schemas.raw.grants
 
-Plan: 2 to add, 0 to change, 0 to delete, 0 unchanged
+Plan: 4 to add, 0 to change, 0 to delete, 0 unchanged

@@ -23,6 +23,12 @@ const (
 // grants look at Resources.Catalog and Resources.Schema).
 var convertOrder = []string{"storage_credentials", "external_locations", "catalogs", "schemas", "volumes", "connections", "grants"}
 
+// grantHostKinds enumerates the per-resource buckets whose `.grants` child
+// map is harvested into a synthetic flat-grants view at dispatch time. Mirrors
+// the kinds that mutator.RouteFlatGrants targets — keep in sync if a new
+// grantable kind is added.
+var grantHostKinds = []string{"catalogs", "schemas", "volumes", "external_locations", "storage_credentials"}
+
 // Convert walks a ucm configuration and produces the Terraform JSON
 // resource tree suitable for writing as a .tf.json file. The returned
 // dyn.Value is shaped as:
@@ -43,6 +49,11 @@ func Convert(ctx context.Context, u *ucm.Ucm) (dyn.Value, error) {
 	if err != nil {
 		// No resources: emit an empty terraform file rather than failing.
 		resourcesVal = dyn.V(map[string]dyn.Value{})
+	}
+
+	resourcesVal, err = liftNestedGrantsForDispatch(resourcesVal)
+	if err != nil {
+		return dyn.InvalidValue, err
 	}
 
 	for _, kind := range convertOrder {
@@ -74,6 +85,82 @@ func Convert(ctx context.Context, u *ucm.Ucm) (dyn.Value, error) {
 	}
 
 	return buildResourceTree(out), nil
+}
+
+// liftNestedGrantsForDispatch walks the per-resource `grants` maps and
+// merges them into a synthetic top-level `grants` map so the existing
+// `grants` converter can process every grant in one pass. mutator.RouteFlatGrants
+// has already moved any flat-form entries into the nested form by the time
+// this runs in production, leaving `resources.grants` empty; lifting the
+// nested form back to a flat shape here keeps the dispatch contract stable
+// without registering five additional kind-specific converters.
+//
+// Each nested grant body carries `securable` populated by the mutator (or by
+// the user, for nested-form grants that bypass routing); the converter reads
+// it directly. Dyn locations are preserved end-to-end so diagnostics still
+// point at the originating ucm.yml span.
+func liftNestedGrantsForDispatch(resourcesVal dyn.Value) (dyn.Value, error) {
+	resources, ok := resourcesVal.AsMap()
+	if !ok {
+		return resourcesVal, nil
+	}
+
+	flatGrants := mapOrNew(getByString(resources, "grants"))
+
+	for _, kind := range grantHostKinds {
+		bucketVal, _ := resources.GetByString(kind)
+		bucket, ok := bucketVal.AsMap()
+		if !ok {
+			continue
+		}
+		for _, parent := range bucket.Pairs() {
+			parentMap, ok := parent.Value.AsMap()
+			if !ok {
+				continue
+			}
+			grantsVal, _ := parentMap.GetByString("grants")
+			grants, ok := grantsVal.AsMap()
+			if !ok {
+				continue
+			}
+			for _, gp := range grants.Pairs() {
+				key := gp.Key.MustString()
+				if _, exists := flatGrants.GetByString(key); exists {
+					return dyn.InvalidValue, fmt.Errorf("grant %q: nested entry under %s.%s collides with flat entry", key, kind, parent.Key.MustString())
+				}
+				flatGrants.SetLoc(key, gp.Key.Locations(), gp.Value)
+			}
+		}
+	}
+
+	if flatGrants.Len() == 0 {
+		return resourcesVal, nil
+	}
+
+	newResources := resources.Clone()
+	existingFlat := getByString(resources, "grants")
+	newResources.SetLoc("grants", existingFlat.Locations(),
+		dyn.NewValue(flatGrants, existingFlat.Locations()))
+	return dyn.NewValue(newResources, resourcesVal.Locations()), nil
+}
+
+// getByString fetches a child value from a dyn.Mapping, returning the zero
+// dyn.Value if the key is absent. Mirrors the small helper pattern used in
+// the mutator package without taking a cross-package dependency.
+func getByString(m dyn.Mapping, key string) dyn.Value {
+	v, _ := m.GetByString(key)
+	return v
+}
+
+// mapOrNew returns the underlying mapping of v cloned, or an empty mapping
+// if v is not a map. Local copy of the helper from the mutator package; the
+// dispatch only needs the same fall-through semantics.
+func mapOrNew(v dyn.Value) dyn.Mapping {
+	m, ok := v.AsMap()
+	if !ok {
+		return dyn.NewMapping()
+	}
+	return m.Clone()
 }
 
 // buildResourceTree assembles the top-level Terraform JSON tree. The output
