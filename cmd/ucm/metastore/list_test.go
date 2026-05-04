@@ -29,7 +29,7 @@ func TestRenderMetastoresText(t *testing.T) {
 				{MetastoreId: "id-1", Name: "primary", Region: "us-west-2"},
 				{MetastoreId: "id-2", Name: "secondary", Region: "us-east-1"},
 			},
-			want: "id-1\tprimary\tus-west-2\nid-2\tsecondary\tus-east-1\n",
+			want: "ID    NAME       REGION\nid-1  primary    us-west-2\nid-2  secondary  us-east-1\n",
 		},
 	}
 
