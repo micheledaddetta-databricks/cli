@@ -81,6 +81,35 @@ func (r *ResourceVolume) DoDelete(ctx context.Context, id string) error {
 	return r.client.Volumes.DeleteByName(ctx, id)
 }
 
+// DoUpdateWithID renames a volume in place via the UpdateVolume API's
+// NewName field. Mirrors bundle/direct/dresources/volume.go::DoUpdateWithID.
+// Triggered by update_id_on_changes on the name field — without this method
+// the planner would unnecessarily recreate the volume just to rename it.
+func (r *ResourceVolume) DoUpdateWithID(ctx context.Context, id string, config *catalog.CreateVolumeRequestContent) (string, *catalog.VolumeInfo, error) {
+	updateRequest := catalog.UpdateVolumeRequestContent{
+		Comment:         config.Comment,
+		Name:            id,
+		Owner:           "",
+		ForceSendFields: utils.FilterFields[catalog.UpdateVolumeRequestContent](config.ForceSendFields, "Owner"),
+	}
+
+	nameFromID, err := volumeNameFromID(id)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if config.Name != nameFromID {
+		updateRequest.NewName = config.Name
+	}
+
+	response, err := r.client.Volumes.Update(ctx, updateRequest)
+	if err != nil || response == nil {
+		return "", nil, err
+	}
+
+	return response.FullName, response, nil
+}
+
 // volumeNameFromID extracts the bare volume name from a fully-qualified id
 // (catalog.schema.name).
 func volumeNameFromID(id string) (string, error) {

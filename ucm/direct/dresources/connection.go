@@ -59,3 +59,27 @@ func (r *ResourceConnection) DoUpdate(ctx context.Context, id string, config *ca
 func (r *ResourceConnection) DoDelete(ctx context.Context, id string) error {
 	return r.client.Connections.DeleteByName(ctx, id)
 }
+
+// DoUpdateWithID renames a connection in place via the UpdateConnection
+// API's NewName field. Triggered by update_id_on_changes on the name
+// field — without this method the planner would unnecessarily recreate
+// the connection just to rename it.
+func (r *ResourceConnection) DoUpdateWithID(ctx context.Context, id string, config *catalog.CreateConnection) (string, *catalog.ConnectionInfo, error) {
+	updateRequest := catalog.UpdateConnection{
+		Name:            id,
+		Options:         config.Options,
+		Owner:           "",
+		ForceSendFields: utils.FilterFields[catalog.UpdateConnection](config.ForceSendFields, "Owner"),
+	}
+
+	if config.Name != id {
+		updateRequest.NewName = config.Name
+	}
+
+	response, err := r.client.Connections.Update(ctx, updateRequest)
+	if err != nil || response == nil {
+		return "", nil, err
+	}
+
+	return response.Name, response, nil
+}

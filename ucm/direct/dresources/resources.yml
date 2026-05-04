@@ -11,7 +11,45 @@
 # Each field entry has:
 #   field: the field path
 #   reason: why this field is in this category
-#
-# Empty until UCM resources are migrated to the embedded-SDK-type pattern.
 
 resources:
+
+  volumes:
+    # Mirrors bundle/direct/dresources/resources.yml's volumes block.
+    # UpdateVolumeRequestContent only accepts {comment, new_name, owner};
+    # every other field is server-side immutable and a change must trigger
+    # recreate (else the planner loops forever silently dropping the field
+    # on Update).
+    recreate_on_changes:
+      - field: catalog_name
+        reason: immutable
+      - field: schema_name
+        reason: immutable
+      - field: storage_location
+        reason: immutable
+      - field: volume_type
+        reason: immutable
+    update_id_on_changes:
+      - field: name
+        reason: id_changes
+    backend_defaults:
+      # storage_location is computed by the backend for managed volumes.
+      - field: storage_location
+
+  connections:
+    # UCM-specific (bundle has no connection support). UpdateConnection
+    # accepts only {new_name, options, owner}; comment/connection_type/
+    # properties/read_only must trigger recreate to avoid the silent-drop
+    # infinite-loop.
+    recreate_on_changes:
+      - field: connection_type
+        reason: immutable
+      - field: comment
+        reason: not_in_update_api
+      - field: properties
+        reason: not_in_update_api
+      - field: read_only
+        reason: not_in_update_api
+    update_id_on_changes:
+      - field: name
+        reason: id_changes
