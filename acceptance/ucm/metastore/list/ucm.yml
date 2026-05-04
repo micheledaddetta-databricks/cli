@@ -1,0 +1,5 @@
+ucm:
+  name: metastore-list
+  engine: direct
+
+resources: {}

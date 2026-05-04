@@ -9,6 +9,7 @@ package ucm
 import (
 	"github.com/databricks/cli/cmd/ucm/deployment"
 	"github.com/databricks/cli/cmd/ucm/generate"
+	"github.com/databricks/cli/cmd/ucm/metastore"
 	"github.com/databricks/cli/cmd/ucm/utils"
 	"github.com/spf13/cobra"
 )
@@ -51,6 +52,7 @@ Online documentation: https://docs.databricks.com/en/dev-tools/ucm/index.html`,
 	cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(generate.New())
 	cmd.AddCommand(deployment.New())
+	cmd.AddCommand(metastore.New())
 	cmd.AddCommand(newDebugCommand())
 	cmd.AddCommand(newDiffCommand())
 	cmd.AddCommand(newDriftCommand())
