@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 
 	"github.com/databricks/cli/libs/diag"
 	"github.com/databricks/cli/libs/dyn"
@@ -140,7 +141,22 @@ func resourceKeysOf(u *ucm.Ucm, kind string) []string {
 	case "schemas":
 		return sortedKeys(u.Config.Resources.Schemas)
 	case "grants":
-		return sortedKeys(u.Config.Resources.Grants)
+		// Grants live both at the top-level flat map (pre-RouteFlatGrants)
+		// and as per-resource nested maps (post-routing); validate keys from
+		// both surfaces so the check works regardless of phase ordering.
+		seen := map[string]struct{}{}
+		for k := range u.Config.Resources.Grants {
+			seen[k] = struct{}{}
+		}
+		for k := range u.Config.Resources.AllGrants() {
+			seen[k] = struct{}{}
+		}
+		keys := make([]string, 0, len(seen))
+		for k := range seen {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return keys
 	case "storage_credentials":
 		return sortedKeys(u.Config.Resources.StorageCredentials)
 	case "external_locations":

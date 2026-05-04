@@ -15,3 +15,47 @@ type Resources struct {
 	Connections        map[string]*resources.Connection        `json:"connections,omitempty"`
 	TagValidationRules map[string]*resources.TagValidationRule `json:"tag_validation_rules,omitempty"`
 }
+
+// AllGrants returns every nested grant declared anywhere under the
+// resources tree, keyed by the grant's leaf key. Each returned grant
+// carries Securable.{Type, Name} synthesised from its parent path when not
+// already set so callers can read the securable uniformly regardless of
+// whether the entry originated as flat or nested form. Synthesis is
+// idempotent: pre-populated securable fields are left untouched.
+//
+// Consumers should prefer this helper over reading r.Grants directly:
+// after FlattenNestedResources + RouteFlatGrants, r.Grants is always empty
+// and the per-resource nested maps are the canonical surface.
+func (r *Resources) AllGrants() map[string]*resources.Grant {
+	out := map[string]*resources.Grant{}
+	visit := func(kind, parentKey string, m map[string]*resources.Grant) {
+		for key, g := range m {
+			if g == nil {
+				continue
+			}
+			if g.Securable.Type == "" {
+				g.Securable.Type = kind
+			}
+			if g.Securable.Name == "" {
+				g.Securable.Name = parentKey
+			}
+			out[key] = g
+		}
+	}
+	for parentKey, c := range r.Catalogs {
+		visit("catalog", parentKey, c.Grants)
+	}
+	for parentKey, s := range r.Schemas {
+		visit("schema", parentKey, s.Grants)
+	}
+	for parentKey, v := range r.Volumes {
+		visit("volume", parentKey, v.Grants)
+	}
+	for parentKey, e := range r.ExternalLocations {
+		visit("external_location", parentKey, e.Grants)
+	}
+	for parentKey, sc := range r.StorageCredentials {
+		visit("storage_credential", parentKey, sc.Grants)
+	}
+	return out
+}

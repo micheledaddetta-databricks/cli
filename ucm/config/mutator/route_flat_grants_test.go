@@ -51,6 +51,8 @@ resources:
 				require.NotNil(t, g)
 				assert.Equal(t, "alice", g.Principal)
 				assert.Equal(t, []string{"USE_CATALOG"}, g.Privileges)
+				assert.Equal(t, "catalog", g.Securable.Type)
+				assert.Equal(t, "main", g.Securable.Name)
 			},
 		},
 		{
@@ -71,6 +73,8 @@ resources:
 				g := u.Config.Resources.Schemas["raw"].Grants["sch_reader"]
 				require.NotNil(t, g)
 				assert.Equal(t, "bob", g.Principal)
+				assert.Equal(t, "schema", g.Securable.Type)
+				assert.Equal(t, "raw", g.Securable.Name)
 			},
 		},
 		{

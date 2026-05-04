@@ -18,6 +18,7 @@ import (
 	"github.com/databricks/cli/libs/diag"
 	"github.com/databricks/cli/libs/dyn"
 	"github.com/databricks/cli/ucm"
+	"github.com/databricks/cli/ucm/config/resources"
 )
 
 // RequiredFields errors on UC resources missing their mandatory fields.
@@ -80,23 +81,36 @@ func checkSchemas(u *ucm.Ucm) diag.Diagnostics {
 
 func checkGrants(u *ucm.Ucm) diag.Diagnostics {
 	var diags diag.Diagnostics
+	// Validate both the flat top-level map (pre-RouteFlatGrants surface, also
+	// what tests using validate.RequiredFields() in isolation see) and the
+	// per-resource nested view (post-routing canonical surface).
 	for _, key := range sortedKeys(u.Config.Resources.Grants) {
 		g := u.Config.Resources.Grants[key]
-		if g == nil {
-			continue
-		}
-		if g.Principal == "" {
-			diags = append(diags, missingField(u, "grants", key, "principal"))
-		}
-		if len(g.Privileges) == 0 {
-			diags = append(diags, missingField(u, "grants", key, "privileges"))
-		}
-		if g.Securable.Type == "" {
-			diags = append(diags, missingField(u, "grants", key, "securable.type"))
-		}
-		if g.Securable.Name == "" {
-			diags = append(diags, missingField(u, "grants", key, "securable.name"))
-		}
+		diags = append(diags, validateGrant(u, key, g)...)
+	}
+	all := u.Config.Resources.AllGrants()
+	for _, key := range sortedKeys(all) {
+		diags = append(diags, validateGrant(u, key, all[key])...)
+	}
+	return diags
+}
+
+func validateGrant(u *ucm.Ucm, key string, g *resources.Grant) diag.Diagnostics {
+	if g == nil {
+		return nil
+	}
+	var diags diag.Diagnostics
+	if g.Principal == "" {
+		diags = append(diags, missingField(u, "grants", key, "principal"))
+	}
+	if len(g.Privileges) == 0 {
+		diags = append(diags, missingField(u, "grants", key, "privileges"))
+	}
+	if g.Securable.Type == "" {
+		diags = append(diags, missingField(u, "grants", key, "securable.type"))
+	}
+	if g.Securable.Name == "" {
+		diags = append(diags, missingField(u, "grants", key, "securable.name"))
 	}
 	return diags
 }

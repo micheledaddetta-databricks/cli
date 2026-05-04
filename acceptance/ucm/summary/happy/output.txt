@@ -14,7 +14,7 @@ Resources:
       URL:  (not deployed)
   Grants:
     analysts:
-      Name: schema main.raw -> analysts
+      Name: schema raw -> analysts
       URL:  (not deployed)
   Schemas:
     raw:

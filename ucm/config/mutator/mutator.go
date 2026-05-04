@@ -12,6 +12,7 @@ func DefaultMutators(ctx context.Context, u *ucm.Ucm) {
 	ucm.ApplySeqContext(ctx, u,
 		loader.ProcessRootIncludes(),
 		FlattenNestedResources(),
+		RouteFlatGrants(),
 		InheritCatalogTags(),
 		DefineDefaultTarget(),
 

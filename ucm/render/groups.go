@@ -120,11 +120,12 @@ func connectionGroup(cfg *config.Root) (ResourceGroup, bool) {
 }
 
 func grantGroup(cfg *config.Root) (ResourceGroup, bool) {
-	if len(cfg.Resources.Grants) == 0 {
+	all := cfg.Resources.AllGrants()
+	if len(all) == 0 {
 		return ResourceGroup{}, false
 	}
-	rows := make([]ResourceInfo, 0, len(cfg.Resources.Grants))
-	for key, g := range cfg.Resources.Grants {
+	rows := make([]ResourceInfo, 0, len(all))
+	for key, g := range all {
 		// Grants have no workspace URL; summarise securable + principal.
 		name := fmt.Sprintf("%s %s -> %s", g.Securable.Type, g.Securable.Name, g.Principal)
 		rows = append(rows, ResourceInfo{Key: key, Name: name})

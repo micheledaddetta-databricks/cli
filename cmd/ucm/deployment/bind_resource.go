@@ -31,7 +31,12 @@ func resolveBindable(u *ucm.Ucm, key string) (phases.ImportKind, error) {
 	if _, ok := u.Config.Resources.Connections[key]; ok {
 		matches = append(matches, phases.ImportConnection)
 	}
+	// Check both surfaces: flat (pre-RouteFlatGrants) and nested (post-routing)
+	// so the early-error fires regardless of when bind is invoked.
 	if _, ok := u.Config.Resources.Grants[key]; ok {
+		return "", fmt.Errorf("grants are not bindable (they reconcile per securable, not by name)")
+	}
+	if _, ok := u.Config.Resources.AllGrants()[key]; ok {
 		return "", fmt.Errorf("grants are not bindable (they reconcile per securable, not by name)")
 	}
 	switch len(matches) {
