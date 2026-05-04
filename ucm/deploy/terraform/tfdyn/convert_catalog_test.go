@@ -1,8 +1,10 @@
 package tfdyn
 
 import (
-	"github.com/databricks/databricks-sdk-go/service/catalog"
+	"encoding/json"
 	"testing"
+
+	"github.com/databricks/databricks-sdk-go/service/catalog"
 
 	"github.com/databricks/cli/libs/dyn"
 	"github.com/databricks/cli/libs/dyn/convert"
@@ -75,5 +77,40 @@ func TestConvertCatalog(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, tc.want, got.AsAny())
 		})
+	}
+}
+
+// TestConvertCatalog_DeterministicProperties asserts that converting a
+// catalog with multi-key tags produces byte-identical JSON across many
+// iterations. Without explicit key-sorting the underlying Go map's
+// randomized iteration leaks into the emitted properties block.
+func TestConvertCatalog_DeterministicProperties(t *testing.T) {
+	src := resources.Catalog{
+		CreateCatalog: catalog.CreateCatalog{Name: "sales_prod"},
+		Tags: map[string]string{
+			"team": "sales",
+			"env":  "prod",
+			"cost": "alpha",
+			"tier": "gold",
+			"zone": "us-west",
+		},
+	}
+
+	var first []byte
+	for i := range 100 {
+		vin, err := convert.FromTyped(src, dyn.NilValue)
+		require.NoError(t, err)
+
+		out := NewResources()
+		require.NoError(t, catalogConverter{}.Convert(t.Context(), "sales", vin, out))
+
+		buf, err := json.Marshal(out.Catalog["sales"].AsAny())
+		require.NoError(t, err)
+
+		if i == 0 {
+			first = buf
+			continue
+		}
+		require.Equal(t, string(first), string(buf), "iteration %d diverged", i)
 	}
 }

@@ -31,7 +31,7 @@ func convertConnectionResource(_ context.Context, key string, vin dyn.Value) (dy
 	}
 	pairs = append(pairs, dyn.Pair{
 		Key:   dyn.NewValue("options", optsVal.Locations()),
-		Value: optsVal,
+		Value: sortMapByKeys(optsVal),
 	})
 
 	appendStringIfSet(&pairs, vin, "comment")
