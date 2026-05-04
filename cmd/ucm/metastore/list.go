@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"text/tabwriter"
 
 	"github.com/databricks/cli/cmd/root"
 	"github.com/databricks/cli/cmd/ucm/utils"
@@ -51,12 +52,16 @@ func renderText(out io.Writer, metastores []catalog.MetastoreInfo) error {
 		_, err := fmt.Fprintln(out, "No metastores found.")
 		return err
 	}
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "ID\tNAME\tREGION"); err != nil {
+		return err
+	}
 	for _, m := range metastores {
-		if _, err := fmt.Fprintf(out, "%s\t%s\t%s\n", m.MetastoreId, m.Name, m.Region); err != nil {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", m.MetastoreId, m.Name, m.Region); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tw.Flush()
 }
 
 func renderJSON(out io.Writer, metastores []catalog.MetastoreInfo) error {
